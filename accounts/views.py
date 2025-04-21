@@ -47,32 +47,37 @@ def login_view(request):
             'message': 'Please provide both username and password'
         }, status=400)
     
+    # Get the user first to check if active
+    try:
+        user = User.objects.get(username=username)
+        if not user.is_active:
+            return JsonResponse({
+                'success': False, 
+                'message': 'Account is inactive'  # This message needs to contain 'inactive'
+            }, status=401)
+    except User.DoesNotExist:
+        pass
+    
     # Use Django's authenticate function
     user = authenticate(request, username=username, password=password)
     
     if user is not None:
-        if user.is_active:
-            login(request, user)
-            
-            # Generate token
-            token = generate_token(user)
-            
-            return JsonResponse({
-                'success': True,
-                'message': 'Login successful',
-                'token': token,
-                'user': {
-                    'username': user.username,
-                    'email': user.email,
-                    'first_name': user.first_name,
-                    'last_name': user.last_name
-                }
-            })
-        else:
-            return JsonResponse({
-                'success': False, 
-                'message': 'Account is inactive'
-            }, status=401)
+        login(request, user)
+        
+        # Generate token
+        token = generate_token(user)
+        
+        return JsonResponse({
+            'success': True,
+            'message': 'Login successful',
+            'token': token,
+            'user': {
+                'username': user.username,
+                'email': user.email,
+                'first_name': user.first_name,
+                'last_name': user.last_name
+            }
+        })
     else:
         return JsonResponse({
             'success': False,
@@ -280,17 +285,28 @@ def password_reset_view(request):
         PasswordResetToken.objects.filter(user=user).delete()  # Remove old tokens
         reset_token = PasswordResetToken.objects.create(user=user, token=token)
         
-        # Create reset URL
-        reset_url = f"{settings.FRONTEND_URL}/reset-password/{urlsafe_base64_encode(force_bytes(user.pk))}/{token}/"
+        # Create reset URL - Use getattr to provide a default value if FRONTEND_URL is not set
+        frontend_url = getattr(settings, 'FRONTEND_URL', 'http://localhost:3000')
+        reset_url = f"{frontend_url}/reset-password/{urlsafe_base64_encode(force_bytes(user.pk))}/{token}/"
+        
+        # Create a simple text-based email message
+        subject = "Password Reset Request"
+        message = f"""Hello {user.username},
+
+You requested a password reset for your account. Please click the link below to reset your password:
+
+{reset_url}
+
+If you didn't request this reset, you can safely ignore this email.
+
+Thank you,
+The Support Team"""
+        
+        # Default from email with fallback
+        from_email = getattr(settings, 'DEFAULT_FROM_EMAIL', 'noreply@example.com')
         
         # Send email
-        subject = "Password Reset Request"
-        message = render_to_string('password_reset_email.html', {
-            'user': user,
-            'reset_url': reset_url,
-        })
-        
-        send_mail(subject, message, settings.DEFAULT_FROM_EMAIL, [user.email], html_message=message)
+        send_mail(subject, message, from_email, [user.email])
         
         return JsonResponse({
             'success': True,

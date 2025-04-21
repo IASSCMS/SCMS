@@ -97,3 +97,5 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 # Custom User Model
 AUTH_USER_MODEL = 'accounts.User'
+
+FRONTEND_URL = 'http://localhost:3000'
