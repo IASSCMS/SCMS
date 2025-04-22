@@ -8,6 +8,11 @@ import uuid
 from django.utils import timezone
 from datetime import timedelta
 from django.contrib.auth.hashers import make_password, check_password
+from drf_yasg.utils import swagger_auto_schema
+from drf_yasg import openapi
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import AllowAny, IsAuthenticated
+from rest_framework.response import Response
 
 from .models import User, Token, PasswordResetToken
 
@@ -34,7 +39,61 @@ def get_user_from_token(token_key):
     except Token.DoesNotExist:
         return None
 
-@require_POST
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['username', 'password'],
+        properties={
+            'username': openapi.Schema(type=openapi.TYPE_STRING, description='Username'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING, description='Password'),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Login successful",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'token': openapi.Schema(type=openapi.TYPE_STRING),
+                    'user': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'username': openapi.Schema(type=openapi.TYPE_STRING),
+                            'email': openapi.Schema(type=openapi.TYPE_STRING),
+                            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        }
+                    )
+                }
+            )
+        ),
+        400: openapi.Response(
+            description="Bad request",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        ),
+        401: openapi.Response(
+            description="Unauthorized",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
 @ensure_csrf_cookie
 def login_view(request):
     data = json.loads(request.body)
@@ -42,7 +101,7 @@ def login_view(request):
     password = data.get('password', '')
 
     if not username or not password:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Please provide both username and password'
         }, status=400)
@@ -51,7 +110,7 @@ def login_view(request):
     try:
         user = User.objects.get(username=username)
         if not user.is_active:
-            return JsonResponse({
+            return Response({
                 'success': False, 
                 'message': 'Account is inactive'  # This message needs to contain 'inactive'
             }, status=401)
@@ -67,7 +126,7 @@ def login_view(request):
         # Generate token
         token = generate_token(user)
         
-        return JsonResponse({
+        return Response({
             'success': True,
             'message': 'Login successful',
             'token': token,
@@ -79,12 +138,37 @@ def login_view(request):
             }
         })
     else:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Invalid credentials'
         }, status=401)
 
 
+@swagger_auto_schema(
+    method='post',
+    responses={
+        200: openapi.Response(
+            description="Logout successful",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    },
+    manual_parameters=[
+        openapi.Parameter(
+            name='Authorization',
+            in_=openapi.IN_HEADER,
+            description='Token {token}',
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ]
+)
+@api_view(['POST'])
 def logout_view(request):
     # Get the token from the request
     auth_header = request.META.get('HTTP_AUTHORIZATION', '')
@@ -94,13 +178,60 @@ def logout_view(request):
         Token.objects.filter(key=token_key).delete()
     
     logout(request)
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': 'Logged out successfully'
     })
 
 
-@require_POST
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['username', 'email', 'password'],
+        properties={
+            'username': openapi.Schema(type=openapi.TYPE_STRING),
+            'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
+            'password': openapi.Schema(type=openapi.TYPE_STRING),
+            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Registration successful",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'token': openapi.Schema(type=openapi.TYPE_STRING),
+                    'user': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'username': openapi.Schema(type=openapi.TYPE_STRING),
+                            'email': openapi.Schema(type=openapi.TYPE_STRING),
+                            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        }
+                    )
+                }
+            )
+        ),
+        400: openapi.Response(
+            description="Bad request",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
 @ensure_csrf_cookie
 def register_view(request):
     data = json.loads(request.body)
@@ -111,21 +242,21 @@ def register_view(request):
     last_name = data.get('last_name', '')
 
     if not username or not email or not password:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Please provide username, email and password'
         }, status=400)
 
     # Check if username already exists
     if User.objects.filter(username=username).exists():
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Username already exists'
         }, status=400)
 
     # Check if email already exists
     if User.objects.filter(email=email).exists():
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Email already exists'
         }, status=400)
@@ -145,7 +276,7 @@ def register_view(request):
     # Generate token
     token = generate_token(user)
     
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': 'Registration successful',
         'token': token,
@@ -158,13 +289,14 @@ def register_view(request):
     })
 
 
+# Custom decorator for token authentication
 def token_required(view_func):
     """Decorator to check for valid token authentication"""
     def wrapped_view(request, *args, **kwargs):
         auth_header = request.META.get('HTTP_AUTHORIZATION', '')
         
         if not auth_header.startswith('Token '):
-            return JsonResponse({
+            return Response({
                 'success': False,
                 'message': 'Authentication required'
             }, status=401)
@@ -173,7 +305,7 @@ def token_required(view_func):
         user = get_user_from_token(token_key)
         
         if not user:
-            return JsonResponse({
+            return Response({
                 'success': False,
                 'message': 'Invalid or expired token'
             }, status=401)
@@ -184,12 +316,107 @@ def token_required(view_func):
     return wrapped_view
 
 
-@token_required
+@swagger_auto_schema(
+    method='get',
+    responses={
+        200: openapi.Response(
+            description="Profile data retrieved successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'user': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'username': openapi.Schema(type=openapi.TYPE_STRING),
+                            'email': openapi.Schema(type=openapi.TYPE_STRING),
+                            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'date_joined': openapi.Schema(type=openapi.TYPE_STRING, format='date-time'),
+                        }
+                    )
+                }
+            )
+        ),
+        401: openapi.Response(
+            description="Unauthorized",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    },
+    manual_parameters=[
+        openapi.Parameter(
+            name='Authorization',
+            in_=openapi.IN_HEADER,
+            description='Token {token}',
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ]
+)
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        properties={
+            'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
+            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Profile updated successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                    'user': openapi.Schema(
+                        type=openapi.TYPE_OBJECT,
+                        properties={
+                            'username': openapi.Schema(type=openapi.TYPE_STRING),
+                            'email': openapi.Schema(type=openapi.TYPE_STRING),
+                            'first_name': openapi.Schema(type=openapi.TYPE_STRING),
+                            'last_name': openapi.Schema(type=openapi.TYPE_STRING),
+                        }
+                    )
+                }
+            )
+        ),
+        401: openapi.Response(
+            description="Unauthorized",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    },
+    manual_parameters=[
+        openapi.Parameter(
+            name='Authorization',
+            in_=openapi.IN_HEADER,
+            description='Token {token}',
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ]
+)
+@api_view(['GET', 'POST'])
+@permission_classes([IsAuthenticated])
 def profile_view(request):
     user = request.user
     
     if request.method == 'GET':
-        return JsonResponse({
+        return Response({
             'success': True,
             'user': {
                 'username': user.username,
@@ -213,7 +440,7 @@ def profile_view(request):
         
         user.save()
         
-        return JsonResponse({
+        return Response({
             'success': True,
             'message': 'Profile updated successfully',
             'user': {
@@ -225,15 +452,67 @@ def profile_view(request):
         })
 
 
-@token_required
-@require_POST
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['old_password', 'new_password'],
+        properties={
+            'old_password': openapi.Schema(type=openapi.TYPE_STRING),
+            'new_password': openapi.Schema(type=openapi.TYPE_STRING),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Password changed successfully",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        ),
+        400: openapi.Response(
+            description="Bad request",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        ),
+        401: openapi.Response(
+            description="Unauthorized",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    },
+    manual_parameters=[
+        openapi.Parameter(
+            name='Authorization',
+            in_=openapi.IN_HEADER,
+            description='Token {token}',
+            type=openapi.TYPE_STRING,
+            required=True
+        )
+    ]
+)
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def password_change_view(request):
     data = json.loads(request.body)
     old_password = data.get('old_password', '')
     new_password = data.get('new_password', '')
     
     if not old_password or not new_password:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Please provide both old and new passwords'
         }, status=400)
@@ -242,7 +521,7 @@ def password_change_view(request):
     
     # Use Django's check_password
     if not user.check_password(old_password):
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Incorrect old password'
         }, status=401)
@@ -251,7 +530,7 @@ def password_change_view(request):
     user.set_password(new_password)
     user.save()
     
-    return JsonResponse({
+    return Response({
         'success': True,
         'message': 'Password changed successfully'
     })
@@ -264,13 +543,46 @@ from django.conf import settings
 from django.utils.http import urlsafe_base64_encode
 from django.utils.encoding import force_bytes
 
-@require_POST
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['email'],
+        properties={
+            'email': openapi.Schema(type=openapi.TYPE_STRING, format='email'),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Password reset email sent",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        ),
+        400: openapi.Response(
+            description="Bad request",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def password_reset_view(request):
     data = json.loads(request.body)
     email = data.get('email', '')
     
     if not email:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Please provide email address'
         }, status=400)
@@ -308,19 +620,52 @@ The Support Team"""
         # Send email
         send_mail(subject, message, from_email, [user.email])
         
-        return JsonResponse({
+        return Response({
             'success': True,
             'message': 'Password reset instructions sent to your email'
         })
     except User.DoesNotExist:
         # For security reasons, don't reveal that the email doesn't exist
-        return JsonResponse({
+        return Response({
             'success': True,
             'message': 'Password reset instructions sent to your email if account exists'
         })
 
 
-@require_POST
+@swagger_auto_schema(
+    method='post',
+    request_body=openapi.Schema(
+        type=openapi.TYPE_OBJECT,
+        required=['new_password'],
+        properties={
+            'new_password': openapi.Schema(type=openapi.TYPE_STRING),
+        }
+    ),
+    responses={
+        200: openapi.Response(
+            description="Password reset successful",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        ),
+        400: openapi.Response(
+            description="Bad request",
+            schema=openapi.Schema(
+                type=openapi.TYPE_OBJECT,
+                properties={
+                    'success': openapi.Schema(type=openapi.TYPE_BOOLEAN),
+                    'message': openapi.Schema(type=openapi.TYPE_STRING),
+                }
+            )
+        )
+    }
+)
+@api_view(['POST'])
+@permission_classes([AllowAny])
 def password_reset_confirm_view(request, uidb64, token):
     """Handle the password reset confirmation"""
     try:
@@ -334,7 +679,7 @@ def password_reset_confirm_view(request, uidb64, token):
         # Verify token
         reset_token = PasswordResetToken.objects.get(user=user, token=token)
         if not reset_token.is_valid():
-            return JsonResponse({
+            return Response({
                 'success': False,
                 'message': 'Password reset link is invalid or has expired'
             }, status=400)
@@ -344,7 +689,7 @@ def password_reset_confirm_view(request, uidb64, token):
         new_password = data.get('new_password', '')
         
         if not new_password:
-            return JsonResponse({
+            return Response({
                 'success': False,
                 'message': 'Please provide a new password'
             }, status=400)
@@ -356,12 +701,12 @@ def password_reset_confirm_view(request, uidb64, token):
         # Delete the used token
         reset_token.delete()
         
-        return JsonResponse({
+        return Response({
             'success': True,
             'message': 'Password has been reset successfully'
         })
     except Exception as e:
-        return JsonResponse({
+        return Response({
             'success': False,
             'message': 'Password reset link is invalid or has expired'
         }, status=400)

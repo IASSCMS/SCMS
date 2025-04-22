@@ -49,13 +49,13 @@ A Django-based authentication system with token-based authentication functionali
 
 ## API Endpoints
 
-- `/api/register/` - Register a new user
-- `/api/login/` - Login and get an authentication token
-- `/api/logout/` - Logout and invalidate the token
-- `/api/profile/` - Get or update the user profile
-- `/api/password_change/` - Change the user password
-- `/api/password_reset/` - Request a password reset email
-- `/api/password_reset_confirm/<uidb64>/<token>/` - Confirm password reset
+- `/api/v1/auth/register/` - Register a new user
+- `/api/v1/auth/login/` - Login and get an authentication token
+- `/api/v1/auth/logout/` - Logout and invalidate the token
+- `/api/v1/auth/profile/` - Get or update the user profile
+- `/api/v1/auth/password_change/` - Change the user password
+- `/api/v1/auth/password_reset/` - Request a password reset email
+- `/api/v1/auth/password_reset_confirm/<uidb64>/<token>/` - Confirm password reset
 
 ## Authentication
 
