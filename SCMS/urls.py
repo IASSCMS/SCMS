@@ -11,7 +11,7 @@ schema_view = get_schema_view(
         default_version='v1',
         description="API documentation for the SCMS project",
         terms_of_service="https://www.example.com/terms/",
-        contact=openapi.Contact(email="your@email.com"),
+        contact=openapi.Contact(email="test@email.com"),
         license=openapi.License(name="BSD License"),
     ),
     public=True,
