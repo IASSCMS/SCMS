@@ -25,6 +25,7 @@ INSTALLED_APPS = [
     'django.contrib.messages',
     'django.contrib.staticfiles',
     'drf_yasg',
+    'corsheaders', 
 ]
 
 MIDDLEWARE = [
@@ -101,10 +102,22 @@ AUTH_USER_MODEL = 'accounts.User'
 
 FRONTEND_URL = 'http://localhost:3000'
 
+# REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
         'accounts.authentication.TokenAuthentication',
-        'rest_framework.authentication.SessionAuthentication',
+        'accounts.authentication.BearerTokenAuthentication',
+        # 'rest_framework.authentication.SessionAuthentication',
     ],
-    # Other DRF settings...
+    'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
+    ],
+    'DEFAULT_RENDERER_CLASSES': [
+        'rest_framework.renderers.JSONRenderer',
+    ],
+    'EXCEPTION_HANDLER': 'accounts.utils.custom_exception_handler',
 }
+
+# CORS settings
+CORS_ALLOW_ALL_ORIGINS = True  # For development only
+CORS_ALLOW_CREDENTIALS = True
