@@ -42,27 +42,47 @@ A Django-based authentication system with token-based authentication functionali
    python manage.py migrate
    ```
 
-6. Run the development server
+6. Create initial roles
+   ```bash
+   python manage.py shell
+
+   from accounts.models import Role
+   Role.objects.create(id=1, name='Admin', description='Administrator with full access')
+   Role.objects.create(id=2, name='Regular User', description='Standard user account')
+   Role.objects.create(id=3, name='Supplier', description='Product supplier')
+   Role.objects.create(id=4, name='Vendor', description='Product vendor')
+   Role.objects.create(id=5, name='Warehouse Manager', description='Manages warehouses')
+   Role.objects.create(id=6, name='Driver', description='Delivery personnel')
+   exit()
+   ```
+
+7. Run the development server
    ```bash
    python manage.py runserver
    ```
 
 ## API Endpoints
 
-- `/api/v1/auth/register/` - Register a new user
-- `/api/v1/auth/login/` - Login and get an authentication token
-- `/api/v1/auth/logout/` - Logout and invalidate the token
-- `/api/v1/auth/profile/` - Get or update the user profile
-- `/api/v1/auth/password_change/` - Change the user password
-- `/api/v1/auth/password_reset/` - Request a password reset email
-- `/api/v1/auth/password_reset_confirm/<uidb64>/<token>/` - Confirm password reset
+- `/api/v1/register/` - Register a new user
+- `/api/v1/login/` - Login and get an authentication token
+- `/api/v1/logout/` - Logout and invalidate the token
+- `/api/v1/me/` - Get the user profile
+- `/api/v1/me/update/` - Update the user profile
+- `/api/v1/password/change/` - Change the user password
+- `/api/v1/password/reset/` - Request a password reset email
+- `/api/v1/password/reset-confirm/<uidb64>/<token>/` - Confirm password reset
+
+### Admin Endpoints
+- `/api/v1/admin/users/` - Get all users (admin only)
+- `/api/v1/admin/users/<user_id>/` - Update specific user (admin only)
+- `/api/v1/admin/users/<user_id>/delete/` - Delete specific user (admin only)
 
 ## Authentication
 
 All protected endpoints require token authentication. Include the token in the request header:
 
 ```
-Authorization: Token <your_token>
+Authorization: Bearer <your_token>
 ```
 
 ## Testing

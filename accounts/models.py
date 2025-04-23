@@ -53,26 +53,6 @@ class User(AbstractUser):
             # Default to regular user if role doesn't exist
             self.role = Role.objects.get_or_create(id=2, name='Regular User')[0]
 
-class Token(models.Model):
-    """
-    Custom Token model for authentication
-    """
-    user = models.ForeignKey(User, on_delete=models.CASCADE, related_name='auth_tokens')
-    key = models.CharField(max_length=64, unique=True)
-    created = models.DateTimeField(auto_now_add=True)
-    expires = models.DateTimeField()
-    
-    class Meta:
-        db_table = 'auth_token'
-        verbose_name = 'Token'
-        verbose_name_plural = 'Tokens'
-    
-    def __str__(self):
-        return f"{self.user.username} - {self.key[:10]}..."
-    
-    def is_valid(self):
-        return self.expires > timezone.now()
-
 class PasswordResetToken(models.Model):
     """
     Password reset token model

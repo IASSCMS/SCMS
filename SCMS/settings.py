@@ -104,9 +104,9 @@ FRONTEND_URL = 'http://localhost:3000'
 # REST Framework settings
 REST_FRAMEWORK = {
     'DEFAULT_AUTHENTICATION_CLASSES': [
-        'accounts.authentication.TokenAuthentication',
-        'accounts.authentication.BearerTokenAuthentication',
-        # 'rest_framework.authentication.SessionAuthentication',
+        'accounts.authentication.JWTAuthentication',
+        # 'accounts.authentication.BearerTokenAuthentication',
+        'rest_framework.authentication.SessionAuthentication',
     ],
     'DEFAULT_PERMISSION_CLASSES': [
         'rest_framework.permissions.IsAuthenticated',

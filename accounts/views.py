@@ -4,68 +4,49 @@ from django.views.decorators.csrf import ensure_csrf_cookie, csrf_exempt
 import json
 import uuid
 from django.utils import timezone
-from datetime import timedelta
+from datetime import datetime, timedelta
 import secrets
 from django.core.mail import send_mail
 from django.conf import settings
 from django.utils.http import urlsafe_base64_encode, urlsafe_base64_decode
 from django.utils.encoding import force_bytes, force_str
-from rest_framework.decorators import api_view, permission_classes
+from rest_framework.decorators import api_view, permission_classes, authentication_classes
 from rest_framework.permissions import AllowAny, IsAuthenticated
 from rest_framework.response import Response
+from rest_framework_simplejwt.tokens import RefreshToken
+import re
+import jwt
 
-from .models import User, Token, PasswordResetToken
+from .models import User, PasswordResetToken, Supplier, Vendor, WarehouseManager, Driver
 
-# Token generation function
-def generate_token(user):
-    # Delete any existing tokens for this user
-    Token.objects.filter(user=user).delete()
+# Email validation regex
+EMAIL_REGEX = re.compile(r'^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$')
+
+# Password validation - at least 8 chars, 1 uppercase, 1 lowercase, 1 number
+PASSWORD_REGEX = re.compile(r'^(?=.*[a-z])(?=.*[A-Z])(?=.*\d).{8,}$')
+
+# JWT token generation
+def generate_jwt_token(user):
+    """Generate JWT token for user authentication"""
+    # Create token payload
+    payload = {
+        'user_id': user.id,
+        'username': user.username,
+        'role_id': getattr(user, 'role_id', 2),
+        'exp': datetime.utcnow() + timedelta(days=7)  # 7 days expiration
+    }
     
-    # Generate a new token
-    token_key = uuid.uuid4().hex
-    expires = timezone.now() + timedelta(days=7)  # Token valid for 7 days
+    # Generate token
+    token = jwt.encode(
+        payload,
+        settings.SECRET_KEY,
+        algorithm='HS256'
+    )
     
-    # Create and save the new token
-    token = Token.objects.create(user=user, key=token_key, expires=expires)
-    return token.key
-
-# Token authentication middleware
-def get_user_from_token(token_key):
-    try:
-        token = Token.objects.get(key=token_key)
-        if token.is_valid():
-            return token.user
-        return None
-    except Token.DoesNotExist:
-        return None
-
-# Custom decorator for token authentication
-def token_required(view_func):
-    """Decorator to check for valid token authentication"""
-    def wrapped_view(request, *args, **kwargs):
-        auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-        
-        if not auth_header.startswith('Token '):
-            return Response({
-                'success': False,
-                'message': 'Authentication required'
-            }, status=401)
-        
-        token_key = auth_header.split(' ')[1]
-        user = get_user_from_token(token_key)
-        
-        if not user:
-            return Response({
-                'success': False,
-                'message': 'Invalid or expired token'
-            }, status=401)
-        
-        request.user = user
-        return view_func(request, *args, **kwargs)
-    
-    return wrapped_view
+    return token
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 @ensure_csrf_cookie
 def register_view(request):
@@ -76,11 +57,26 @@ def register_view(request):
     first_name = data.get('first_name', '')
     last_name = data.get('last_name', '')
     role_id = data.get('role_id', 2)  # Default to regular user role
-
+    
+    # Extended validation
     if not username or not email or not password:
         return Response({
             'success': False,
             'message': 'Please provide username, email and password'
+        }, status=400)
+    
+    # Email format validation
+    if not EMAIL_REGEX.match(email):
+        return Response({
+            'success': False,
+            'message': 'Invalid email format'
+        }, status=400)
+    
+    # Password strength validation
+    if not PASSWORD_REGEX.match(password):
+        return Response({
+            'success': False,
+            'message': 'Password must be at least 8 characters and include uppercase, lowercase, and numbers'
         }, status=400)
 
     # Check if username already exists
@@ -106,9 +102,19 @@ def register_view(request):
         last_name=last_name
     )
     
-    # Set role_id (assuming you have a role field or related model)
+    # Set role_id
     user.role_id = role_id
     user.save()
+    
+    # Create role-specific profile if needed
+    if role_id == 3:  # Supplier (example role_id)
+        Supplier.objects.create(user_id=user.id)
+    elif role_id == 4:  # Vendor (example role_id)
+        Vendor.objects.create(user_id=user.id)
+    elif role_id == 5:  # Warehouse Manager (example role_id)
+        WarehouseManager.objects.create(user_id=user.id)
+    elif role_id == 6:  # Driver (example role_id)
+        Driver.objects.create(user_id=user.id)
     
     return Response({
         'success': True,
@@ -118,6 +124,7 @@ def register_view(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def login_view(request):
     data = request.data
@@ -152,8 +159,8 @@ def login_view(request):
     if user is not None:
         login(request, user)
         
-        # Generate token
-        token = generate_token(user)
+        # Generate JWT token
+        token = generate_jwt_token(user)
         
         return Response({
             'success': True,
@@ -163,7 +170,7 @@ def login_view(request):
                 'user_id': user.id,
                 'username': user.username,
                 'email': user.email,
-                'role_id': getattr(user, 'role_id', 2),  # Default to regular user if no role_id
+                'role_id': getattr(user, 'role_id', 2),
             }
         })
     else:
@@ -174,14 +181,10 @@ def login_view(request):
 
 @csrf_exempt
 @api_view(['POST'])
+@permission_classes([IsAuthenticated])
 def logout_view(request):
-    # Get the token from the request
-    auth_header = request.META.get('HTTP_AUTHORIZATION', '')
-    if auth_header.startswith('Token '):
-        token_key = auth_header.split(' ')[1]
-        # Delete the token
-        Token.objects.filter(key=token_key).delete()
-    
+    # JWT doesn't need server-side invalidation
+    # Just instruct the client to remove the token
     logout(request)
     return Response({
         'success': True,
@@ -193,14 +196,41 @@ def logout_view(request):
 def get_profile_view(request):
     user = request.user
     
+    # Get role-specific data if available
+    role_data = {}
+    role_id = getattr(user, 'role_id', 2)
+    
+    try:
+        if role_id == 3:  # Supplier
+            supplier = Supplier.objects.get(user_id=user.id)
+            role_data = {
+                'company_name': supplier.company_name,
+                'contact_number': supplier.contact_number,
+                # Add other supplier-specific fields
+            }
+        elif role_id == 4:  # Vendor
+            vendor = Vendor.objects.get(user_id=user.id)
+            role_data = {
+                'store_name': vendor.store_name,
+                'business_address': vendor.business_address,
+                # Add other vendor-specific fields
+            }
+        # Add other role-specific data retrieval
+    except:
+        # No role-specific data found
+        pass
+    
     return Response({
         'success': True,
         'user': {
             'user_id': user.id,
             'username': user.username,
             'email': user.email,
-            'role_id': getattr(user, 'role_id', 2),
-            'is_verified': True  # Add appropriate field from model
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'role_id': role_id,
+            'is_verified': getattr(user, 'is_verified', False),
+            'role_data': role_data
         }
     })
 
@@ -221,6 +251,13 @@ def update_profile_view(request):
         user.username = data['username']
         
     if 'email' in data:
+        # Validate email format
+        if not EMAIL_REGEX.match(data['email']):
+            return Response({
+                'success': False,
+                'message': 'Invalid email format'
+            }, status=400)
+            
         # Check if email is already taken by another user
         if User.objects.exclude(id=user.id).filter(email=data['email']).exists():
             return Response({
@@ -236,6 +273,31 @@ def update_profile_view(request):
         user.last_name = data['last_name']
     
     user.save()
+    
+    # Update role-specific data if provided
+    role_id = getattr(user, 'role_id', 2)
+    role_data = data.get('role_data', {})
+    
+    if role_data:
+        try:
+            if role_id == 3:  # Supplier
+                supplier = Supplier.objects.get(user_id=user.id)
+                if 'company_name' in role_data:
+                    supplier.company_name = role_data['company_name']
+                if 'contact_number' in role_data:
+                    supplier.contact_number = role_data['contact_number']
+                supplier.save()
+            elif role_id == 4:  # Vendor
+                vendor = Vendor.objects.get(user_id=user.id)
+                if 'store_name' in role_data:
+                    vendor.store_name = role_data['store_name']
+                if 'business_address' in role_data:
+                    vendor.business_address = role_data['business_address']
+                vendor.save()
+            # Add other role-specific data updates
+        except:
+            # Role-specific data not found
+            pass
     
     return Response({
         'success': True,
@@ -274,6 +336,7 @@ def password_change_view(request):
     })
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def password_reset_view(request):
     data = request.data
@@ -330,6 +393,7 @@ The Support Team"""
         })
 
 @api_view(['POST'])
+@authentication_classes([])
 @permission_classes([AllowAny])
 def password_reset_confirm_view(request, uidb64, token):
     """Handle the password reset confirmation"""
@@ -411,12 +475,36 @@ def admin_get_all_users(request):
     # Format user data
     user_list = []
     for user in users:
+        # Get role-specific data if available
+        role_data = {}
+        role_id = getattr(user, 'role_id', 2)
+        
+        try:
+            if role_id == 3:  # Supplier
+                supplier = Supplier.objects.get(user_id=user.id)
+                role_data = {
+                    'company_name': supplier.company_name,
+                    'contact_number': supplier.contact_number,
+                }
+            elif role_id == 4:  # Vendor
+                vendor = Vendor.objects.get(user_id=user.id)
+                role_data = {
+                    'store_name': vendor.store_name,
+                    'business_address': vendor.business_address,
+                }
+            # Add other role-specific data retrieval
+        except:
+            pass
+            
         user_list.append({
             'user_id': user.id,
             'username': user.username,
             'email': user.email,
-            'role_id': getattr(user, 'role_id', 2),
-            'is_verified': getattr(user, 'is_verified', False)
+            'first_name': user.first_name,
+            'last_name': user.last_name,
+            'role_id': role_id,
+            'is_verified': getattr(user, 'is_verified', False),
+            'role_data': role_data
         })
     
     return Response({
@@ -449,13 +537,71 @@ def admin_update_user(request, user_id):
         
         # Update fields if provided
         if 'email' in data:
+            # Validate email format
+            if not EMAIL_REGEX.match(data['email']):
+                return Response({
+                    'success': False,
+                    'message': 'Invalid email format'
+                }, status=400)
+                
             user.email = data['email']
+        
         if 'role_id' in data:
-            user.role_id = data['role_id']
+            old_role_id = user.role_id
+            new_role_id = data['role_id']
+            user.role_id = new_role_id
+            
+            # Handle role change - create new role-specific record if needed
+            if old_role_id != new_role_id:
+                if new_role_id == 3 and not Supplier.objects.filter(user_id=user.id).exists():
+                    Supplier.objects.create(user_id=user.id)
+                elif new_role_id == 4 and not Vendor.objects.filter(user_id=user.id).exists():
+                    Vendor.objects.create(user_id=user.id)
+                # Add other role creations as needed
+        
         if 'is_verified' in data:
             user.is_verified = data['is_verified']
+            
+        if 'username' in data:
+            # Check for uniqueness
+            if User.objects.exclude(id=user.id).filter(username=data['username']).exists():
+                return Response({
+                    'success': False,
+                    'message': 'Username already exists'
+                }, status=400)
+            user.username = data['username']
+            
+        if 'first_name' in data:
+            user.first_name = data['first_name']
+            
+        if 'last_name' in data:
+            user.last_name = data['last_name']
         
         user.save()
+        
+        # Update role-specific data if provided
+        role_data = data.get('role_data', {})
+        if role_data:
+            try:
+                role_id = user.role_id
+                if role_id == 3:  # Supplier
+                    supplier = Supplier.objects.get(user_id=user.id)
+                    if 'company_name' in role_data:
+                        supplier.company_name = role_data['company_name']
+                    if 'contact_number' in role_data:
+                        supplier.contact_number = role_data['contact_number']
+                    supplier.save()
+                elif role_id == 4:  # Vendor
+                    vendor = Vendor.objects.get(user_id=user.id)
+                    if 'store_name' in role_data:
+                        vendor.store_name = role_data['store_name']
+                    if 'business_address' in role_data:
+                        vendor.business_address = role_data['business_address']
+                    vendor.save()
+                # Add other role-specific data updates
+            except:
+                # Role-specific data not found
+                pass
         
         return Response({
             'success': True,
@@ -490,6 +636,7 @@ def admin_delete_user(request, user_id):
                 'message': 'Cannot delete your own account'
             }, status=400)
         
+        # Role-specific tables will be deleted automatically if CASCADE is set on foreign key
         user.delete()
         
         return Response({
